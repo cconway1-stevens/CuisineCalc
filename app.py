@@ -1,217 +1,245 @@
 import streamlit as st
 import json
-from pint import UnitRegistry
 import re
+from datetime import datetime
 from fractions import Fraction
+from pint import UnitRegistry
+import sys
 
-# Initialize pint's UnitRegistry
+# Initialize Unit Registry for Pint
 ureg = UnitRegistry()
 
-# Add custom units
-ureg.define("piece = []")
+# Initialize Session State
+if 'recipe_name' not in st.session_state:
+    st.session_state.recipe_name = ''
+if 'recipe_text' not in st.session_state:
+    st.session_state.recipe_text = ''
+if 'original_servings' not in st.session_state:
+    st.session_state.original_servings = 1
+if 'desired_servings' not in st.session_state:
+    st.session_state.desired_servings = 1
+if 'ingredients' not in st.session_state:
+    st.session_state.ingredients = []
+if 'errors' not in st.session_state:
+    st.session_state.errors = []
 
-# Function to convert units using pint
-def convert_units(amount, from_unit, to_unit):
+def clear_recipe():
+    st.session_state.recipe_name = ''
+    st.session_state.recipe_text = ''
+    st.session_state.original_servings = 1
+    st.session_state.desired_servings = 1
+    st.session_state.ingredients = []
+    st.session_state.errors = []
+
+def log_error(error_message):
+    st.session_state.errors.append(error_message)
+    error_log = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "error": error_message
+    }
+    with open('error_log.json', 'a') as f:
+        json.dump(error_log, f)
+        f.write('\n')
+
+def parse_ingredient_line(line):
     try:
-        amount = float(amount)
-        from_quantity = amount * ureg(from_unit)
-        to_quantity = from_quantity.to(to_unit)
-        return to_quantity.magnitude, to_unit
+        if not line.strip():
+            return None
+        
+        # Match the amount (including fractions), unit, and ingredient
+        amount_unit_regex = re.compile(r'(\d+\s*\d*/?\d*)\s*([a-zA-Z]+)?\s*(.*)')
+        match = amount_unit_regex.match(line.strip())
+        if not match:
+            return None
+        
+        amount = match.group(1).strip()
+        unit = match.group(2).strip() if match.group(2) else ''
+        ingredient = match.group(3).strip()
+
+        return {
+            "amount": amount,
+            "unit": unit,
+            "ingredient": ingredient
+        }
     except Exception as e:
-        st.error(f"Error converting units: {e}")
-        return None, None
-
-# Function to scale the recipe
-def scale_recipe(ingredients, original_servings, desired_servings):
-    scale_factor = desired_servings / original_servings
-    scaled_ingredients = []
-    for ingredient in ingredients:
-        name, amount, unit = ingredient
-        scaled_amount = amount * scale_factor
-        scaled_ingredients.append((name, scaled_amount, unit))
-    return scaled_ingredients
-
-# Function to parse ingredient amounts
-def parse_amount(amount_str):
-    try:
-        # Check for fractions (e.g., "1 1/2" or "1/2")
-        if " " in amount_str:
-            whole, fraction = amount_str.split()
-            return float(Fraction(whole)) + float(Fraction(fraction))
-        else:
-            return float(Fraction(amount_str))
-    except ValueError:
-        st.error(f"Error parsing amount: {amount_str}")
+        log_error(f"Failed to parse line: {line} - Error: {e}")
         return None
 
-# Function to clear session state
-def clear_recipe():
-    st.session_state['recipe_name'] = "Untitled Recipe"
-    st.session_state['recipe_text'] = ""
-    st.session_state['original_servings'] = 1
-    st.session_state['desired_servings'] = 1
-    st.session_state['ingredients'] = []
-
-# Initialize session state
-if 'recipe_name' not in st.session_state:
-    clear_recipe()
-
-# Available units
-units = ['oz', 'ml', 'liters', 'lb', 'grams', 'kg', 'piece', 'cups', 'tbsp', 'tsp']
-metric_units = ['ml', 'liters', 'grams', 'kg']
-imperial_units = ['oz', 'lb', 'cups', 'tbsp', 'tsp']
-
-# Streamlit app
-st.set_page_config(page_title="AI Recipe Tool", layout="wide")
-
-# Navigation bar
-st.sidebar.title("Navigation")
-option = st.sidebar.radio("Go to", ["Input Recipe", "Edit Recipe", "Scale and Convert Recipe"])
-
-# Save and clear buttons
-if st.sidebar.button("Save Recipe", key="save_recipe_sidebar"):
-    recipe_data = {
-        "name": st.session_state['recipe_name'],
-        "original_servings": st.session_state['original_servings'],
-        "desired_servings": st.session_state['desired_servings'],
-        "ingredients": st.session_state['ingredients']
-    }
-    # Save JSON
-    json_str = json.dumps(recipe_data, indent=4)
-    st.download_button(label="Download Recipe as JSON", data=json_str, file_name=f"{st.session_state['recipe_name']}.json", mime="application/json")
-
-    # Save TXT
-    txt_str = f"Recipe Name: {st.session_state['recipe_name']}\n"
-    txt_str += f"Original Servings: {st.session_state['original_servings']}\n"
-    txt_str += f"Desired Servings: {st.session_state['desired_servings']}\n"
-    txt_str += "Ingredients:\n"
-    for name, amount, unit in st.session_state['ingredients']:
-        txt_str += f"  {name}: {amount:.2f} {unit}\n"
-    st.download_button(label="Download Recipe as TXT", data=txt_str, file_name=f"{st.session_state['recipe_name']}.txt", mime="text/plain")
-
-    st.sidebar.success("Recipe saved successfully!")
-
-if st.sidebar.button("Clear Recipe", key="clear_recipe_sidebar"):
-    clear_recipe()
-    st.sidebar.success("Recipe cleared!")
-
-# Input Recipe page
-if option == "Input Recipe":
-    st.title("Input Your Recipe")
-
-    uploaded_file = st.file_uploader("Upload a saved recipe (JSON or TXT)", type=["json", "txt"], key="upload_file")
-    if uploaded_file is not None:
-        if uploaded_file.name.endswith(".json"):
-            recipe_data = json.load(uploaded_file)
+def convert_to_fraction(amount_str):
+    try:
+        return Fraction(amount_str)
+    except ValueError:
+        # Handle mixed fractions like "1 1/2"
+        parts = amount_str.split()
+        if len(parts) == 2:
+            whole_part = Fraction(parts[0])
+            fraction_part = Fraction(parts[1])
+            return whole_part + fraction_part
         else:
-            recipe_data = {}
-            lines = uploaded_file.read().decode("utf-8").split("\n")
-            recipe_data["name"] = lines[0].split(": ")[1]
-            recipe_data["original_servings"] = int(lines[1].split(": ")[1])
-            recipe_data["desired_servings"] = int(lines[2].split(": ")[1])
-            recipe_data["ingredients"] = []
-            for line in lines[4:]:
-                if line:
-                    parts = line.split(": ")
-                    name = parts[0].strip()
-                    amount, unit = parts[1].strip().split()
-                    recipe_data["ingredients"].append((name, parse_amount(amount), unit))
+            raise ValueError(f"Invalid literal for Fraction: '{amount_str}'")
 
-        # Update session state with uploaded recipe
-        st.session_state['recipe_name'] = recipe_data['name']
-        st.session_state['original_servings'] = recipe_data['original_servings']
-        st.session_state['desired_servings'] = recipe_data['desired_servings']
-        st.session_state['ingredients'] = recipe_data['ingredients']
+def input_recipe():
+    st.header("Input Recipe")
+    st.session_state.recipe_name = st.text_input("Recipe Name", st.session_state.recipe_name)
+    uploaded_file = st.file_uploader("Upload Recipe (JSON or TXT)", type=['json', 'txt'])
 
-        st.success("Recipe uploaded successfully!")
+    if uploaded_file is not None:
+        if uploaded_file.type == "application/json":
+            recipe_data = json.load(uploaded_file)
+            st.session_state.recipe_text = recipe_data['recipe_text']
+            st.session_state.original_servings = recipe_data['servings']
+            st.session_state.ingredients = recipe_data['ingredients']
+        elif uploaded_file.type == "text/plain":
+            st.session_state.recipe_text = uploaded_file.getvalue().decode("utf-8")
 
-    st.text_input("Recipe Name", value=st.session_state['recipe_name'], key='recipe_name')
-    st.text_area("Enter your recipe ingredients and amounts (e.g., 'Vodka 1 oz')", value=st.session_state['recipe_text'], height=200, key='recipe_text')
-    st.number_input("How many servings does this recipe make?", min_value=1, step=1, value=st.session_state['original_servings'], key='original_servings')
-    if st.button("Parse Ingredients", key="parse_ingredients"):
-        st.session_state['ingredients'] = []
-        for line in st.session_state['recipe_text'].split("\n"):
-            if line:
-                try:
-                    parts = re.split(r'\s+', line)
-                    amount = parse_amount(parts[0])
-                    unit = parts[1]
-                    name = " ".join(parts[2:])
-                    st.session_state['ingredients'].append((name, amount, unit))
-                except ValueError:
-                    st.error(f"Invalid ingredient format: {line}")
+    st.write("### Expected Recipe Input Format:")
+    st.write("Each ingredient should be on a new line in the format: 'amount unit ingredient'. Example: '1 cup sugar'.")
 
-# Edit Recipe page
-if option == "Edit Recipe":
-    st.title("Edit Ingredients")
-    for i, (name, amount, unit) in enumerate(st.session_state['ingredients']):
-        with st.expander(f"Ingredient {i+1}: {name}"):
-            new_name = st.text_input("Name", value=name, key=f'name_{i}')
-            new_amount = st.number_input("Amount", value=amount, key=f'amount_{i}')
-            new_unit = st.selectbox("Unit", options=units, index=units.index(unit), key=f'unit_{i}')
-            st.session_state['ingredients'][i] = (new_name, new_amount, new_unit)
+    st.session_state.recipe_text = st.text_area("Recipe Text", st.session_state.recipe_text)
+    if st.button("Parse Recipe"):
+        st.session_state.ingredients = []
+        st.session_state.errors = []
+        for line in st.session_state.recipe_text.split('\n'):
+            ingredient = parse_ingredient_line(line)
+            if ingredient:
+                st.session_state.ingredients.append(ingredient)
+            else:
+                log_error(f"Failed to parse line: {line}")
 
-    if st.button("Update Ingredients", key="update_ingredients"):
-        st.success("Ingredients updated successfully!")
+    st.write("### Ingredients")
+    for ingredient in st.session_state.ingredients:
+        st.write(f"{ingredient['amount']} {ingredient['unit']} {ingredient['ingredient']}")
+    
+    if st.session_state.errors:
+        st.write("### Errors:")
+        for error in st.session_state.errors:
+            st.write(error)
 
-    if st.button("Clear Ingredients", key="clear_ingredients"):
-        st.session_state['ingredients'] = []
-        st.success("Ingredients cleared!")
+def edit_recipe():
+    st.header("Edit Recipe")
+    st.write("Edit the ingredients of the recipe below:")
+    for i, ingredient in enumerate(st.session_state.ingredients):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.session_state.ingredients[i]['amount'] = st.text_input(f"Quantity {i+1}", ingredient['amount'])
+        with col2:
+            st.session_state.ingredients[i]['unit'] = st.text_input(f"Unit {i+1}", ingredient['unit'])
+        with col3:
+            st.session_state.ingredients[i]['ingredient'] = st.text_input(f"Ingredient {i+1}", ingredient['ingredient'])
+    
+    if st.button("Update Ingredients"):
+        st.success("Ingredients updated.")
+    
+    if st.button("Clear Ingredients"):
+        st.session_state.ingredients = []
 
-# Scale and Convert Recipe page
-if option == "Scale and Convert Recipe":
-    st.title("Scale and Convert Recipe")
-    st.number_input("How many servings do you want to make?", min_value=1, step=1, value=st.session_state['desired_servings'], key='desired_servings')
+def scale_and_convert_recipe():
+    st.header("Scale and Convert Recipe")
+    st.write("Specify the desired number of servings to scale the recipe accordingly.")
+    
+    st.session_state.desired_servings = st.number_input("Desired Servings", min_value=1, value=st.session_state.desired_servings)
+    
+    if st.session_state.original_servings == 0:
+        scale_factor = 1
+    else:
+        scale_factor = st.session_state.desired_servings / st.session_state.original_servings
+    
+    scaled_ingredients = []
+    for ingredient in st.session_state.ingredients:
+        try:
+            original_amount = convert_to_fraction(ingredient['amount'])
+            scaled_amount = original_amount * scale_factor
+            ingredient['amount'] = str(scaled_amount)
+            scaled_ingredients.append(ingredient)
+        except Exception as e:
+            log_error(f"Failed to scale ingredient: {ingredient} - Error: {e}")
 
-    scaled_ingredients = scale_recipe(st.session_state['ingredients'], st.session_state['original_servings'], st.session_state['desired_servings'])
-    converted_ingredients = []
+    def convert_units(ingredients, to_metric=True):
+        for ingredient in ingredients:
+            try:
+                original_amount = ureg(ingredient['amount'] + " " + ingredient['unit'])
+                if to_metric:
+                    converted_amount = original_amount.to_base_units()
+                else:
+                    converted_amount = original_amount.to('imperial_pint')
+                ingredient['amount'] = str(converted_amount.magnitude)
+                ingredient['unit'] = str(converted_amount.units)
+            except Exception as e:
+                log_error(f"Failed to convert ingredient units: {ingredient} - Error: {e}")
+        return ingredients
 
-    for i, (name, amount, unit) in enumerate(scaled_ingredients):
-        with st.expander(f"Ingredient {i+1}: {name}"):
-            new_name = st.text_input("Name", value=name, key=f'scale_name_{i}')
-            new_amount = st.number_input("Amount", value=amount, key=f'scale_amount_{i}')
-            new_unit = st.selectbox("Unit", options=units, index=units.index(unit), key=f'scale_unit_{i}')
-            possible_units = [u for u in units if ureg(new_unit).dimensionality == ureg(u).dimensionality]
-            desired_unit = st.selectbox(f"Desired unit for {new_name}", options=possible_units, key=f'scale_desired_unit_{i}')
-            converted_amount, converted_unit = convert_units(new_amount, new_unit, desired_unit)
-            if converted_amount is not None:
-                converted_ingredients.append((new_name, converted_amount, converted_unit))
+    if st.button("Convert to Metric"):
+        scaled_ingredients = convert_units(scaled_ingredients, to_metric=True)
+    
+    if st.button("Convert to Imperial"):
+        scaled_ingredients = convert_units(scaled_ingredients, to_metric=False)
 
-    if st.button("Convert All Units", key="convert_all"):
-        st.session_state['ingredients'] = converted_ingredients
-        st.success("Units converted successfully!")
+    display_as_fractions = st.checkbox("Display amounts as fractions", value=True)
+    
+    st.write("### Scaled and Converted Recipe:")
+    for ingredient in scaled_ingredients:
+        amount = ingredient['amount']
+        if display_as_fractions:
+            try:
+                amount = Fraction(amount)
+            except ValueError:
+                pass
+        st.write(f"{amount} {ingredient['unit']} {ingredient['ingredient']}")
+    
+    if st.session_state.errors:
+        st.write("### Errors:")
+        for error in st.session_state.errors:
+            st.write(error)
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("Convert to Metric", key="convert_metric"):
-            for i, (name, amount, unit) in enumerate(converted_ingredients):
-                if unit not in metric_units:
-                    converted_amount, converted_unit = convert_units(amount, unit, 'grams' if 'gram' in ureg(unit).dimensionality else 'ml')
-                    if converted_amount is not None:
-                        converted_ingredients[i] = (name, converted_amount, converted_unit)
-            st.session_state['ingredients'] = converted_ingredients
-            st.success("Converted to Metric units successfully!")
+def save_recipe():
+    recipe_data = {
+        "recipe_name": st.session_state.recipe_name,
+        "recipe_text": st.session_state.recipe_text,
+        "servings": st.session_state.desired_servings,
+        "ingredients": st.session_state.ingredients
+    }
+    with open('recipe.json', 'w') as f:
+        json.dump(recipe_data, f)
+    with open('recipe.txt', 'w') as f:
+        f.write(st.session_state.recipe_text)
+    st.success("Recipe saved.")
 
-    with col2:
-        if st.button("Convert to Imperial", key="convert_imperial"):
-            for i, (name, amount, unit) in enumerate(converted_ingredients):
-                if unit not in imperial_units:
-                    converted_amount, converted_unit = convert_units(amount, unit, 'oz' if 'ounce' in ureg(unit).dimensionality else 'cups')
-                    if converted_amount is not None:
-                        converted_ingredients[i] = (name, converted_amount, converted_unit)
-            st.session_state['ingredients'] = converted_ingredients
-            st.success("Converted to Imperial units successfully!")
+def navigation():
+    st.sidebar.title("AI Recipe Tool")
+    page = st.sidebar.radio("Navigation", ["Enter Recipe", "Edit Ingredients", "Scale & Convert"])
+    
+    if page == "Enter Recipe":
+        input_recipe()
+    elif page == "Edit Ingredients":
+        edit_recipe()
+    elif page == "Scale & Convert":
+        scale_and_convert_recipe()
+    
+    if st.sidebar.button("Save Recipe"):
+        save_recipe()
+    
+    if st.sidebar.button("Clear Recipe"):
+        clear_recipe()
+        st.success("Recipe cleared.")
 
-    with col3:
-        if st.button("Convert to Weight Only", key="convert_weight"):
-            for i, (name, amount, unit) in enumerate(converted_ingredients):
-                if 'mass' not in ureg(unit).dimensionality:
-                    converted_amount, converted_unit = convert_units(amount, unit, 'grams')
-                    if converted_amount is not None:
-                        converted_ingredients[i] = (name, converted_amount, converted_unit)
-            st.session_state['ingredients'] = converted_ingredients
-            st.success("Converted to Weight Only units successfully!")
+# Main application
+def main():
+    navigation()
 
-    st.header("Scaled and Converted Recipe")
-    for name, amount, unit in converted_ingredients:
-        st.write(f"{name}: {amount:.2f} {unit}")
+if __name__ == "__main__":
+    main()
+
+# Test case to verify functionality
+def test_parse_ingredient_line():
+    test_line = "1 cup sugar"
+    expected_output = {
+        "amount": "1",
+        "unit": "cup",
+        "ingredient": "sugar"
+    }
+    actual_output = parse_ingredient_line(test_line)
+    print(f"Actual output: {actual_output}")
+    assert actual_output == expected_output
+
+# Run test case
+test_parse_ingredient_line()
