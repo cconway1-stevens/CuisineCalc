@@ -1,1 +1,18 @@
 {"timestamp": "2024-06-06 06:36:07", "error": "Failed to parse line: "}
+{"timestamp": "2024-06-06 06:43:45", "error": "Failed to parse line: Vodka 1 oz"}
+{"timestamp": "2024-06-06 06:43:45", "error": "Failed to parse line: Cranberry juice 4 oz"}
+{"timestamp": "2024-06-06 06:43:45", "error": "Failed to parse line: Pineapple juice 4 oz"}
+{"timestamp": "2024-06-06 06:43:45", "error": "Failed to parse line: Soda water 4 oz"}
+{"timestamp": "2024-06-06 06:43:45", "error": "Failed to parse line: Fresh berries (for garnish)"}
+{"timestamp": "2024-06-06 06:43:45", "error": "Failed to parse line: Mint leaf (for garnish)"}
+{"timestamp": "2024-06-06 06:43:45", "error": "Failed to parse line: "}
+{"timestamp": "2024-06-06 06:52:33", "error": "Failed to parse line: "}
+{"timestamp": "2024-06-06 06:56:42", "error": "Failed to parse line: "}
+{"timestamp": "2024-06-06 07:00:12", "error": "Failed to parse line: "}
+{"timestamp": "2024-06-06 07:00:45", "error": "Failed to parse line: "}
+{"timestamp": "2024-06-06 07:02:26", "error": "Failed to parse line: "}
+{"timestamp": "2024-06-06 07:02:51", "error": "Failed to convert ingredient units: {'amount': '8.0', 'unit': 'package', 'ingredient': '(2 1/4 teaspoons) active dry yeast'} - Error: 'package' is not defined in the unit registry"}
+{"timestamp": "2024-06-06 07:02:53", "error": "Failed to convert ingredient units: {'amount': '16.0', 'unit': 'package', 'ingredient': '(2 1/4 teaspoons) active dry yeast'} - Error: 'package' is not defined in the unit registry"}
+{"timestamp": "2024-06-06 07:02:55", "error": "Failed to convert ingredient units: {'amount': '32.0', 'unit': 'package', 'ingredient': '(2 1/4 teaspoons) active dry yeast'} - Error: 'package' is not defined in the unit registry"}
+{"timestamp": "2024-06-06 07:02:59", "error": "Failed to parse line: "}
+{"timestamp": "2024-06-06 07:03:25", "error": "Failed to parse line: "}
