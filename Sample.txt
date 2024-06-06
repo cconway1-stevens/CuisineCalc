@@ -1,0 +1,8 @@
+Recipe Name: Sample
+Original Servings: 1
+Desired Servings: 1
+Ingredients:
+  ☐ Vodka: 1.00 oz
+  ☐ Cranberry juice: 4.00 oz
+  ☐ Pineapple juice: 4.00 oz
+  ☐ Soda water: 4.00 oz
